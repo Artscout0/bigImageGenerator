@@ -1,0 +1,8 @@
+todo:
+  Python:
+     - Further optimise code
+     - Break code down into individual functions
+  GLSL:
+     - Optimise code
+     - Put into separate files
+     - Bypass txture file size limitation, or change logic
