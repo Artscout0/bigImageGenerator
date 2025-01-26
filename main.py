@@ -6,6 +6,7 @@ from PIL import Image
 
 # Function to generate a gradient image with customizable size
 def create_gradient_image(width=30000, height=30000, output_file="complex_gradient_image.tiff"):
+
     # Initialize GLFW
     if not glfw.init():
         raise Exception("GLFW could not be initialized!")
@@ -25,6 +26,13 @@ def create_gradient_image(width=30000, height=30000, output_file="complex_gradie
     # Make the window's context current
     glfw.make_context_current(window)
 
+    # Query maximum texture size after making context current
+    max_texture_size = glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+    if width > max_texture_size or height > max_texture_size:
+        glfw.terminate()
+        # print(f"Texture size {width}x{height} exceeds the maximum allowed size of {max_texture_size}x{max_texture_size}")
+        raise ValueError(f"Texture size {width}x{height} exceeds the maximum allowed size of {max_texture_size}x{max_texture_size}")
+    
     # GLSL fragment shader to create a complex gradient
     fragment_shader_source = """
     #version 410 core
@@ -143,4 +151,4 @@ def create_gradient_image(width=30000, height=30000, output_file="complex_gradie
     print(f"Complex gradient image created successfully! Saved as '{output_file}'.")
 
 # Call the function with customizable width and height
-create_gradient_image(width=40_000, height=40_000, output_file="custom_gradient_image.tiff")
+create_gradient_image(width=16384, height=16384, output_file="custom_gradient_image.tiff")
