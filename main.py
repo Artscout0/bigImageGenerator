@@ -4,9 +4,10 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 import numpy as np
 from PIL import Image
 import ctypes
+import tifffile as tiff  # New import for tifffile
 
 # Function to generate a gradient image with customizable size using tiling
-def create_gradient_image(width=16384, height=16384, tiles_x=4, tiles_y=4, output_file="complex_gradient_image.tiff"):
+def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="complex_gradient_image.tiff"):
 
     # Initialize GLFW
     if not glfw.init():
@@ -31,15 +32,17 @@ def create_gradient_image(width=16384, height=16384, tiles_x=4, tiles_y=4, outpu
         # Query maximum texture size after making context current
         max_texture_size = glGetIntegerv(GL_MAX_TEXTURE_SIZE)
         print(f"Maximum texture size supported: {max_texture_size}x{max_texture_size}")
-
+        if tile_size > max_texture_size:
+            raise Exception(f"Desired tile size {tile_size} is larger than the maximum texture size {max_texture_size}!")
+            
         # Set tile size to the maximum texture size
-        tile_size = max_texture_size
+        # tile_size = 4096 # max_texture_size
         print(f"Using tile size: {tile_size}x{tile_size}")
 
         # Validate that the desired image size is compatible with tiling
         expected_width = tiles_x * tile_size
         expected_height = tiles_y * tile_size
-        if width != expected_width or height != expected_height:
+        if tile_size != expected_width or tile_size != expected_height:
             print(f"Adjusting image size to {expected_width}x{expected_height} to fit {tiles_x}x{tiles_y} tiles.")
             width = expected_width
             height = expected_height
@@ -121,8 +124,8 @@ def create_gradient_image(width=16384, height=16384, tiles_x=4, tiles_y=4, outpu
         # Create a framebuffer for off-screen rendering
         FBO = glGenFramebuffers(1)
 
-        # Prepare the final image
-        final_image = Image.new("RGB", (width, height))
+        # Prepare the final image as a NumPy array to use with tifffile
+        final_image_array = np.zeros((height, width, 3), dtype=np.uint8)
 
         for tile_x in range(tiles_x):
             for tile_y in range(tiles_y):
@@ -164,18 +167,29 @@ def create_gradient_image(width=16384, height=16384, tiles_x=4, tiles_y=4, outpu
                 # Read pixels from the framebuffer
                 glPixelStorei(GL_PACK_ALIGNMENT, 1)
                 pixels = glReadPixels(0, 0, tile_size, tile_size, GL_RGB, GL_UNSIGNED_BYTE)
-                image = Image.frombytes("RGB", (tile_size, tile_size), pixels)
-                image = image.transpose(Image.FLIP_TOP_BOTTOM)  # OpenGL's origin is bottom-left
 
-                # Paste the tile into the final image
-                final_image.paste(image, (pos_x, pos_y))
+                # Convert to NumPy array and flip vertically
+                tile_image = np.frombuffer(pixels, dtype=np.uint8).reshape((tile_size, tile_size, 3))
+                tile_image = np.flipud(tile_image)  # OpenGL's origin is bottom-left
+
+                # Paste the tile into the final image array
+                final_image_array[pos_y:pos_y+tile_size, pos_x:pos_x+tile_size, :] = tile_image
 
                 # Cleanup textures
                 glDeleteTextures(1, [texture])
 
-        # Save the final image
-        final_image.save(output_file)
-        print(f"Complex gradient image created successfully! Saved as '{output_file}'.")
+        # Save the final image using tifffile
+        try:
+            tiff.imwrite(output_file, final_image_array, compression='none', photometric='rgb', bigtiff=True)
+            print(f"Complex gradient image created successfully! Saved as '{output_file}'.")
+        except ValueError as ve:
+            print(f"ValueError: {ve}")
+        except TypeError as te:
+            print(f"TypeError: {te}")
+        except struct.error as se:
+            print(f"StructError: {se}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
         # Cleanup
         glDeleteFramebuffers(1, [FBO])
@@ -187,4 +201,4 @@ def create_gradient_image(width=16384, height=16384, tiles_x=4, tiles_y=4, outpu
         glfw.terminate()
 
 # Call the function with 4x4 tiling
-create_gradient_image(width=16384, height=16384, tiles_x=4, tiles_y=4, output_file="custom_gradient_image.tiff")
+create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="custom_gradient_image.tiff")
