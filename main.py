@@ -201,4 +201,4 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
         glfw.terminate()
 
 # Call the function with 4x4 tiling
-create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="custom_gradient_image.tiff")
+create_gradient_image(tile_size=4096, tiles_x=8, tiles_y=8, output_file="custom_gradient_image.tiff")

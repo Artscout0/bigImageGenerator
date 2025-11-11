@@ -1,6 +1,9 @@
 # Big Image Generator
 
 A personal project with some friends to generate as big of an image (in terms of file size and pixel size)
+## How to use 
+Make sure you install the required dependencies : (make sure you have your pip executable directory path in y your enviroment variables.)
+`pip install glfw``pip install PyOpenGL``pip install numpy``pip install Image``pip install tiffile`
 
 ## How it works
 
