@@ -62,18 +62,15 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
            print(f"Warning: unable to determine GL_MAX_TEXTURE_SIZE; proceeding but tile_size={tile_size} may be invalid.")
 
         print(f"Using tile size: {tile_size}x{tile_size}")
-        
 
         # Validate that the desired image size is compatible with tiling
         expected_width = tiles_x * tile_size
         expected_height = tiles_y * tile_size
         width = expected_width
         height = expected_height
-        print(f"Generating image: {width}x{height} ({tiles_x}x{tiles_y} tiles of {tile_size}x{tile_size})")
+        print(f"Adjusting image size to {width}x{height} to fit {tiles_x}x{tiles_y} tiles.")
 
-
-        bytes_needed = width * height * 3
-        print(f"Estimated final file size (uncompressed): {bytes_needed / (1024**3):.2f} GiB")
+        print(f"Generating a {tiles_x}x{tiles_y} tiled image with each tile sized {tile_size}x{tile_size}.")
 
         # GLSL fragment shader to create a complex gradient
         fragment_shader_source = """
@@ -182,19 +179,17 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
         # Prepare the final image as a NumPy array to use with tifffile
         final_image_array = np.zeros((height, width, 3), dtype=np.uint8)
 
-        # Calculate required bytes and warn
-        # bytes_needed = int(height) * int(width) * 3
-        # gib = bytes_needed / (1024**3)
-        # print(f"Final image will require approximately {gib:.1f} GiB on disk. Ensure you have that free.")
-        # memmap_path = os.path.join(os.path.dirname(output_file), os.path.basename(output_file) + ".memmap")
-        # # Create on-disk memmap (this allocates the file on disk, not RAM)
-        # final_image_array = np.memmap(memmap_path, dtype=np.uint8, mode='w+', shape=(height, width, 3))
-        # --- NEW: Initialize total render timer ---
+        # Use TiffWriter in BigTIFF mode to avoid holding the full image in RAM
+        writer = tiff.TiffWriter(output_file, bigtiff=True)
+        # We will write tiles in row-major order: for each tile_row, for each tile_col
+        # Specify tile shape (tile_height, tile_width)
+        tile_shape = (tile_size, tile_size)        # --- NEW: Initialize total render timer ---
         total_render_time_s = 0.0
 
-        for tile_x in range(tiles_x):
-            for tile_y in range(tiles_y):
-                # Current tile position
+        # Iterate rows (tile_y) first, then columns (tile_x) so tiles fill image top-to-bottom, left-to-right
+        for tile_y in range(tiles_y):
+            for tile_x in range(tiles_x):
+                # Current tile position (pixel coordinates)
                 pos_x = tile_x * tile_size
                 pos_y = tile_y * tile_size
                 
@@ -228,9 +223,15 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
                 tile_image = np.frombuffer(pixels, dtype=np.uint8).reshape((tile_size, tile_size, 3))
                 tile_image = np.flipud(tile_image)  # OpenGL's origin is bottom-left
 
-                # Paste the tile into the final image array
-                # Note: NumPy slicing is (row, column) which is (y, x)
-                final_image_array[pos_y:pos_y+tile_size, pos_x:pos_x+tile_size, :] = tile_image
+                writer.write(
+                   tile_image,
+                   shape=(height, width, 3),
+                   dtype=tile_image.dtype,
+                   tile=tile_shape,
+                   photometric='rgb',
+                   compression='none',   # use 'lzw' or 'deflate' for lossless compression
+                   contiguous=False
+               )
 
                 # --- NEW: End single tile timer and report ---
                 tile_end_time = time.perf_counter()
@@ -240,48 +241,9 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
                 print(f" Done. Took {tile_duration_ms:.2f} ms")
 
 
-        # --- NEW: Report total render time ---
-        print(f"\n--- All tiles rendered. Total render time: {total_render_time_s:.2f} seconds ---\n")
-
-
-        # # Save the final image using tifffile
-        try:
-            print("Saving final image... This may take a moment.")
-          
-            # --- NEW: Start save timer ---
-            save_start_time = time.perf_counter()
-          
-            tiff.imwrite(output_file, final_image_array, compression='none', photometric='rgb', bigtiff=True)
-          
-            # --- NEW: End save timer and report ---
-            save_end_time = time.perf_counter()
-            save_duration_s = save_end_time - save_start_time
-          
-            print(f"Image saved successfully as '{output_file}'.")
-            print(f"--- Save time: {save_duration_s:.2f} seconds ---")       
-        except ValueError as ve:
-            print(f"ValueError: {ve}")
-        except TypeError as te:
-            print(f"TypeError: {te}")
-        except Exception as e:
-            print(f"An unexpected error occurred during saving: {e}")
-        # Flush memmap to disk then write TIFF from the memmap (BigTIFF)
-        # try:
-        #     final_image_array.flush()
-        #     print("Saving final image to TIFF (BigTIFF)... This may take a while.")
-        #     save_start_time = time.perf_counter()
-        #     tiff.imwrite(output_file, final_image_array, photometric='rgb', compression='none', bigtiff=True)
-        #     save_end_time = time.perf_counter()
-        #     print(f"Image saved successfully as '{output_file}' in {save_end_time - save_start_time:.2f} s")
-        # except Exception as e:
-        #     print(f"Failed to save the image: {e}")
-        # finally:
-        #     # remove memmap backing file if you don't need it
-        #     try:
-        #         final_image_array._mmap.close()
-        #     except Exception:
-        #         pass
-            # os.remove(memmap_path)  # uncomment to delete the memmap file when done
+        writer.close()
+        print(f"\n--- All tiles rendered. Total render time: {total_render_time_s:.2f} seconds ---")
+        print(f"Image written to '{output_file}' using BigTIFF tiled writes.")
         # Cleanup
         glDeleteProgram(shader)
         glDeleteTextures(1, [texture])

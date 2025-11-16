@@ -5,7 +5,9 @@ A personal project with some friends to generate as big of an image (in terms of
 
 ### Installing the required dependecies
 
-Make sure you install the required dependencies : (make sure you have your pip executable directory path in y your enviroment variables.)
+You can use the provided `.venv` file as the enviroment file with `.venv/Scripts/activate` or create your own using the steps below.
+
+To create your own enviroment make sure you install the required dependencies : (make sure you have your pip executable directory path in your enviroment variables.)
 - ```pip install glfw```
 - ```pip install PyOpenGL```
 - ```pip install numpy```
