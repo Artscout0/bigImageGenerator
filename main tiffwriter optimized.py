@@ -112,13 +112,14 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
         # @TODO: Implement correct display like in the other files (line by line, ms per tile, etc)
         # --- Main Render and Write Logic ---
+        total_render_time_s = 0.0
         # Define a generator function that will render and yield one tile at a time
         def tile_generator():
             nonlocal total_render_time_s
             for tile_y in range(tiles_y):
                 for tile_x in range(tiles_x):
                     print(f"\rRendering Tile ({tile_y * tiles_x + tile_x + 1}/{tiles_x * tiles_y})...", end="", flush=True)
-                    tile_start = time.perf_counter()
+                    tile_start_time = time.perf_counter()
 
                     glBindFramebuffer(GL_FRAMEBUFFER, FBO)
                     glViewport(0, 0, tile_size, tile_size)
@@ -128,25 +129,38 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
                     glBindVertexArray(VAO)
                     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
                     
+                    # # Ensure all rendering commands are finished before reading pixels and stopping the timer
+                    # glFinish()
+                    
                     glPixelStorei(GL_PACK_ALIGNMENT, 1)
                     pixels = glReadPixels(0, 0, tile_size, tile_size, GL_RGB, GL_UNSIGNED_BYTE)
                     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
                     tile_image = np.frombuffer(pixels, dtype=np.uint8).reshape((tile_size, tile_size, 3))
                     
+                    tile_end_time = time.perf_counter()
+                    # tile_duration_ms = (tile_end_time - tile_start_time) * 1000
+                    total_render_time_s += tile_end_time - tile_start_time
                     
-                    total_render_time_s += (time.perf_counter() - tile_start)
+                    # Uncomment (with tile_duration_ms) to show time taken per tile
+                    # print(f" Done. Took {tile_duration_ms:.2f} ms")
                     
-                    # Yield the flipped tile to the writer
-                    yield np.flipud(tile_image)
+                    # Yield the flipped tile to the writer 
+                    # (Uncomment to make the image not be fully black. Decreases performance)
+                    # yield np.flipud(tile_image)
             
             # After the loop, print a newline to move past the status line
             print("\nAll tiles rendered.")
+            
+            print(f"\nTotal Render time: {total_render_time_s:.2f} seconds")
+            
+            print("\nSaving final image... This may take a moment.")
+
 
         # Use tifffile.imwrite with the generator. This is the most optimal method.
         print("Starting image generation and streaming to TIFF...")
-        total_render_time_s = 0
-        
+        write_start_time = time.perf_counter()
+
         tiff.imwrite(
             output_file,
             tile_generator(),
@@ -158,10 +172,16 @@ def create_gradient_image(tile_size=4096, tiles_x=4, tiles_y=4, output_file="com
             compression='none' # Fastest. Use 'lzw' or 'deflate' for smaller files.
         )
 
-        print(f"\nTotal Render time: {total_render_time_s:.2f} seconds")
+        write_end_time = time.perf_counter()
+        write_duration_s = write_end_time - write_start_time
+        save_time_s = write_duration_s - total_render_time_s
+        
+        
+        # print(f"\nTotal Render time: {total_render_time_s:.2f} seconds")
         print(f"\n--- Image saved successfully to '{output_file}' ---")
         total_end_time = time.perf_counter()
-        print(f"Total process time: {total_end_time - total_start_time:.2f} seconds")
+        print(f"File Save time: {save_time_s:.2f} seconds\n")
+        print(f"Total process time: {total_end_time - total_start_time:.2f} seconds\n")
 
     finally:
         # Cleanup all resources
